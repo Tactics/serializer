@@ -145,7 +145,7 @@ class XmlDeserializationVisitor extends AbstractVisitor
     {
         $entryName = null !== $this->currentMetadata && $this->currentMetadata->xmlEntryName ? $this->currentMetadata->xmlEntryName : 'entry';
 
-        if ( ! isset($data->$entryName)) {
+        if ( ! isset($data->$entryName) && ! isset($data[$entryName])) {
             if (null === $this->result) {
                 return $this->result = array();
             }
@@ -163,8 +163,16 @@ class XmlDeserializationVisitor extends AbstractVisitor
                     $this->result = &$result;
                 }
 
-                foreach ($data->$entryName as $v) {
-                    $result[] = $this->navigator->accept($v, $type['params'][0], $context);
+                if (is_object($data)) {
+                    foreach ($data->$entryName as $v) {
+                        $result[] = $this->navigator->accept($v, $type['params'][0], $context);
+                    }
+                }
+
+                if (isset($data[$entryName])) {
+                    foreach ($data[$entryName] as $v) {
+                        $result[] = $this->navigator->accept($v, $type['params'][0], $context);
+                    }
                 }
 
                 return $result;
@@ -180,13 +188,26 @@ class XmlDeserializationVisitor extends AbstractVisitor
                     $this->result = &$result;
                 }
 
-                foreach ($data->$entryName as $v) {
-                    if ( ! isset($v[$this->currentMetadata->xmlKeyAttribute])) {
-                        throw new RuntimeException(sprintf('The key attribute "%s" must be set for each entry of the map.', $this->currentMetadata->xmlKeyAttribute));
-                    }
+                if (is_object($data)) {
+                    foreach ($data->$entryName as $v) {
+                        if ( ! isset($v[$this->currentMetadata->xmlKeyAttribute])) {
+                            throw new RuntimeException(sprintf('The key attribute "%s" must be set for each entry of the map.', $this->currentMetadata->xmlKeyAttribute));
+                        }
 
-                    $k = $this->navigator->accept($v[$this->currentMetadata->xmlKeyAttribute], $keyType, $context);
-                    $result[$k] = $this->navigator->accept($v, $entryType, $context);
+                        $k = $this->navigator->accept($v[$this->currentMetadata->xmlKeyAttribute], $keyType, $context);
+                        $result[$k] = $this->navigator->accept($v, $entryType, $context);
+                    }
+                }
+
+                if (isset($data[$entryName])) {
+                    foreach ($data[$entryName] as $v) {
+                        if (!isset($v[$this->currentMetadata->xmlKeyAttribute])) {
+                            throw new RuntimeException(sprintf('The key attribute "%s" must be set for each entry of the map.', $this->currentMetadata->xmlKeyAttribute));
+                        }
+
+                        $k = $this->navigator->accept($v[$this->currentMetadata->xmlKeyAttribute], $keyType, $context);
+                        $result[$k] = $this->navigator->accept($v, $entryType, $context);
+                    }
                 }
 
                 return $result;
@@ -246,6 +267,23 @@ class XmlDeserializationVisitor extends AbstractVisitor
             $enclosingElem = $data;
             if ( ! $metadata->xmlCollectionInline && isset($data->$name)) {
                 $enclosingElem = $data->$name;
+            }
+
+            if ('' !== $namespace = (string) $metadata->xmlNamespace) {
+                $registeredNamespaces = $data->getDocNamespaces();
+                if (false === $prefix = array_search($namespace, $registeredNamespaces)) {
+                    $prefix = uniqid('ns-');
+                    $data->registerXPathNamespace($prefix, $namespace);
+                }
+
+                $attributeName = ($prefix === '') ? $name : $prefix.':'.$name;
+                $nodes = $data->xpath('./'.$attributeName);
+
+                if (empty($nodes)) {
+                    return;
+                }
+
+                $enclosingElem = [$name => $nodes];
             }
 
             $this->setCurrentMetadata($metadata);
@@ -359,7 +397,7 @@ class XmlDeserializationVisitor extends AbstractVisitor
         if (null !== $child->internalSubset) {
             return str_replace(array("\n", "\r"), '', $child->internalSubset);
         }
-        
+
         $startPos = $endPos = stripos($data, '<!doctype');
         $braces = 0;
         do {

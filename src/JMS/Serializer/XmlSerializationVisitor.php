@@ -165,7 +165,17 @@ class XmlSerializationVisitor extends AbstractVisitor
         foreach ($data as $k => $v) {
             $tagName = (null !== $this->currentMetadata && $this->currentMetadata->xmlKeyValuePairs && $this->isElementNameValid($k)) ? $k : $entryName;
 
-            $entryNode = $this->document->createElement($tagName);
+            if ('' !== $namespace = (string) $this->currentMetadata->xmlNamespace) {
+                if (!$prefix = $this->currentNode->lookupPrefix($namespace)) {
+                    $prefix = 'ns-'.  substr(sha1($namespace), 0, 8);
+                }
+
+                $entryNode = $this->document->createElementNS($this->currentMetadata->xmlNamespace, $tagName);
+                $entryNode->prefix = $prefix;
+            } else {
+                $entryNode = $this->document->createElement($tagName);
+            }
+
             $this->currentNode->appendChild($entryNode);
             $this->setCurrentNode($entryNode);
 
@@ -199,7 +209,7 @@ class XmlSerializationVisitor extends AbstractVisitor
             }
             $this->document->appendChild($this->currentNode);
         }
-        
+
         $this->addNamespaceAttributes($metadata, $this->currentNode);
 
         $this->hasValue = false;
@@ -421,7 +431,7 @@ class XmlSerializationVisitor extends AbstractVisitor
             $this->nullWasVisited = true;
         }
     }
-    
+
     /**
      * Adds namespace attributes to the XML root element
      *
